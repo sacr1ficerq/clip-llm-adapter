@@ -1,24 +1,64 @@
 import torch
 from tqdm import tqdm
 
+from transformers import get_cosine_schedule_with_warmup
+
 
 class QwenVisionCaptionTrainer:
-    def __init__(self, qwen_model, qwen_tokenizer, vision_encoder, vision_adapter, device, lr=1e-4):
+    def __init__(self,
+                 qwen_model,
+                 qwen_tokenizer,
+                 vision_encoder,
+                 vision_adapter,
+                 device,
+                 lr=1e-4,
+                 weight_decay=1e-3,
+                 max_grad_norm=1.0,
+                 num_training_steps=None,
+                 warmup_ratio=0.05):
         self.qwen_model = qwen_model
         self.tok = qwen_tokenizer
         self.vision_encoder = vision_encoder
         self.adapter = vision_adapter
         self.device = device
-        self.opt = torch.optim.AdamW(self.adapter.parameters(), lr=lr)
+        self.max_grad_norm = max_grad_norm
+
+        self.opt = torch.optim.AdamW(self.adapter.parameters(), lr=lr, weight_decay=weight_decay)
+
+        self.sched = None
+        if num_training_steps is not None:
+            num_warmup_steps = int(warmup_ratio * num_training_steps)
+            self.sched = get_cosine_schedule_with_warmup(
+                self.opt, num_warmup_steps=num_warmup_steps, num_training_steps=num_training_steps
+            )
 
         self.pad_id = self.tok.pad_token_id
         if self.pad_id is None:
             self.pad_id = self.tok.eos_token_id
 
+    def train_one_epoch(self, train_loader) -> float:
+        self.adapter.train()
+        total = 0.0
+
+        for batch in tqdm(train_loader, desc="Training"):
+            self.opt.zero_grad(set_to_none=True)
+            loss = self._forward_batch(batch)
+            loss.backward()
+
+            torch.nn.utils.clip_grad_norm_(self.adapter.parameters(), self.max_grad_norm)
+
+            self.opt.step()
+            if self.sched is not None:
+                self.sched.step()
+
+            total += loss.item()
+
+        return total / max(1, len(train_loader))
+
     def _forward_batch(self, batch):
-        pixel_values = batch["pixel_values"]
-        input_ids = batch["input_ids"]
-        attention_mask = batch["attention_mask"]
+        pixel_values = batch["pixel_values"].to(self.device)
+        input_ids = batch["input_ids"].to(self.device)
+        attention_mask = batch["attention_mask"].to(self.device)
 
         with torch.no_grad():
             vis_tokens = self.vision_encoder(pixel_values=pixel_values).last_hidden_state  # (B,S,Dv)
@@ -37,19 +77,6 @@ class QwenVisionCaptionTrainer:
 
         out = self.qwen_model(inputs_embeds=inputs_embeds, attention_mask=full_attn, labels=labels)
         return out.loss
-
-    def train_one_epoch(self, train_loader) -> float:
-        self.adapter.train()
-        total = 0.0
-
-        for batch in tqdm(train_loader, desc="Training"):
-            self.opt.zero_grad(set_to_none=True)
-            loss = self._forward_batch(batch)
-            loss.backward()
-            self.opt.step()
-            total += loss.item()
-
-        return total / max(1, len(train_loader))
 
     @torch.no_grad()
     def validate(self, val_loader):

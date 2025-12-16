@@ -63,8 +63,8 @@ def collate_fn_vision(batch, image_processor, tokenizer, device, max_txt_len=64)
     )
 
     return {
-        "pixel_values": pixel_values.to(device),  # (B, 3, H, W)
-        "input_ids": tok["input_ids"].to(device),  # (B, L)
-        "attention_mask": tok["attention_mask"].to(device),  # (B, L)
+        "pixel_values": pixel_values,  # (B, 3, H, W)
+        "input_ids": tok["input_ids"],  # (B, L)
+        "attention_mask": tok["attention_mask"],  # (B, L)
         "captions": list(captions),  # list[str]
     }
