@@ -21,6 +21,7 @@
 Если судить по генерируемым капшенам, получилось довольно неплохо, модель действительно обучилась и генерирует близкие к gt описанию капшены:
 
 
+```
 REF: The dogs are in the snow in front of a fence .
 HYP: A brown dog is running in the snow . The other dog is a black dog . The dogs are both dogs . The dogs are both dogs . The dogs are both dogs . The dogs are both dogs
 
@@ -35,6 +36,6 @@ HYP: A man and a woman sit on a bench
 
 REF: A man is wearing a Sooners red football shirt and helmet .
 HYP: A black and white football player in a red jersey
-
+```
 
 Для 0.6B модели не так уж и плохо
